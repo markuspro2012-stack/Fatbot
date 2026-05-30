@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from config import BOT_TOKEN
 from database import init_db, AsyncSessionLocal
-from handlers import start, onboarding, profile, food_add
+from handlers import start, onboarding, profile, food_add, food_photo
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
 logger = logging.getLogger(__name__)
@@ -28,6 +28,7 @@ async def main():
     dp.include_router(onboarding.router)
     dp.include_router(profile.router)
     dp.include_router(food_add.router)
+    dp.include_router(food_photo.router)
 
     await init_db()
     logger.info("Database initialized")
