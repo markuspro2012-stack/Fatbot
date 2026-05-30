@@ -29,6 +29,16 @@ async def db_session_middleware(handler, event, data):
 
 
 async def main():
+    # Start health server FIRST so Render detects the port
+    port = int(os.environ.get("PORT", 8080))
+    app = web.Application()
+    app.router.add_get("/", health)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    logger.info(f"Health server started on port {port}")
+
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher(storage=MemoryStorage())
 
@@ -50,16 +60,6 @@ async def main():
     setup_scheduler(scheduler, bot)
     scheduler.start()
     logger.info("Scheduler started")
-
-    # Health check web server for Render
-    port = int(os.environ.get("PORT", 8080))
-    app = web.Application()
-    app.router.add_get("/", health)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    await site.start()
-    logger.info(f"Health server on port {port}")
 
     logger.info("Bot started")
     try:
