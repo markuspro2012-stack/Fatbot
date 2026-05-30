@@ -81,7 +81,14 @@ async def handle_photo(message: Message, state: FSMContext, session: AsyncSessio
 
     if result is None or "error" in result:
         error = result.get("error", "unknown") if result else "unknown"
-        if error == "not_food":
+        if error == "no_key":
+            await status_msg.edit_text(
+                "📸 Распознавание фото пока не настроено.\n\n"
+                "Добавь еду вручную: /add\n\n"
+                "<i>Функция появится после подключения Gemini API</i>",
+                parse_mode="HTML"
+            )
+        elif error == "not_food":
             await status_msg.edit_text(
                 "😕 На фото не распознана еда.\n\n"
                 "Попробуй другое фото или добавь вручную: /add"
