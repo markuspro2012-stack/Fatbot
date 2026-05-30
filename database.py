@@ -10,10 +10,27 @@ class Base(DeclarativeBase):
 
 def _fix_db_url(url: str) -> str:
     if url.startswith("postgres://"):
-        url = url.replace("postgres://", "postgresql+asyncpg://", 1)
-    elif url.startswith("postgresql://") and "+asyncpg" not in url:
-        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        return url.replace("postgres://", "postgresql+asyncpg://", 1)
+    if url.startswith("postgresql://") and "+asyncpg" not in url:
+        return url.replace("postgresql://", "postgresql+asyncpg://", 1)
     return url
+
+
+def _make_engine():
+    url = os.environ.get("DATABASE_URL", "")
+    if not url:
+        raise RuntimeError("DATABASE_URL is not set")
+    ssl_ctx = ssl.create_default_context()
+    ssl_ctx.check_hostname = False
+    ssl_ctx.verify_mode = ssl.CERT_NONE
+    return create_async_engine(
+        _fix_db_url(url),
+        echo=False,
+        connect_args={
+            "ssl": ssl_ctx,
+            "statement_cache_size": 0,
+        },
+    )
 
 
 _engine = None
@@ -23,17 +40,7 @@ _session_factory = None
 def _get_engine():
     global _engine
     if _engine is None:
-        url = os.environ.get("DATABASE_URL", "")
-        if not url:
-            raise RuntimeError("DATABASE_URL is not set")
-        ssl_ctx = ssl.create_default_context()
-        ssl_ctx.check_hostname = False
-        ssl_ctx.verify_mode = ssl.CERT_NONE
-        _engine = create_async_engine(
-            _fix_db_url(url),
-            echo=False,
-            connect_args={"ssl": ssl_ctx},
-        )
+        _engine = _make_engine()
     return _engine
 
 
