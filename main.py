@@ -6,7 +6,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from config import BOT_TOKEN
 from database import init_db, AsyncSessionLocal
-from handlers import start, onboarding, profile, food_add, food_photo, dashboard, notifications
+from handlers import start, onboarding, profile, food_add, food_photo, dashboard, notifications, extras
 from services.scheduler import setup_scheduler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
@@ -32,6 +32,7 @@ async def main():
     dp.include_router(food_photo.router)
     dp.include_router(dashboard.router)
     dp.include_router(notifications.router)
+    dp.include_router(extras.router)
 
     await init_db()
     logger.info("Database initialized")
