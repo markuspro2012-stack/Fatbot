@@ -2,7 +2,18 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sess
 from sqlalchemy.orm import DeclarativeBase
 from config import DATABASE_URL
 
-engine = create_async_engine(DATABASE_URL, echo=False)
+
+def _fix_db_url(url: str) -> str:
+    """Railway provides postgresql://, asyncpg needs postgresql+asyncpg://"""
+    if url.startswith("postgres://"):
+        url = url.replace("postgres://", "postgresql+asyncpg://", 1)
+    elif url.startswith("postgresql://") and "+asyncpg" not in url:
+        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    return url
+
+
+_db_url = _fix_db_url(DATABASE_URL)
+engine = create_async_engine(_db_url, echo=False)
 AsyncSessionLocal = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
