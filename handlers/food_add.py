@@ -228,11 +228,15 @@ async def process_confirm(callback: CallbackQuery, state: FSMContext, session: A
     await state.clear()
 
     meal_label = MEAL_TYPES[meal_type]
+    save_kb = InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="⭐ Сохранить блюдо", callback_data=f"save_meal:{entry.id}")
+    ]])
     await callback.message.edit_text(
         f"✅ <b>Добавлено!</b>\n\n"
         f"{meal_label}: {product['name']} — {grams} г\n"
         f"🔥 +{nutrition['calories']} ккал\n\n"
         f"Посмотреть дневник: /today\n"
         f"Остаток: /left",
+        reply_markup=save_kb,
         parse_mode="HTML"
     )
