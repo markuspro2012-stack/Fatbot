@@ -3,15 +3,17 @@ import json
 import google.generativeai as genai
 from config import GEMINI_API_KEY
 
-genai.configure(api_key=GEMINI_API_KEY)
+_model = None
 
-_model = genai.GenerativeModel(
-    model_name="gemini-1.5-flash",
-    generation_config=genai.GenerationConfig(
-        temperature=0.2,
-        max_output_tokens=400,
-    ),
-)
+if GEMINI_API_KEY:
+    genai.configure(api_key=GEMINI_API_KEY)
+    _model = genai.GenerativeModel(
+        model_name="gemini-1.5-flash",
+        generation_config=genai.GenerationConfig(
+            temperature=0.2,
+            max_output_tokens=400,
+        ),
+    )
 
 _PROMPT = (
     "Look at this food photo and identify what you see.\n\n"
@@ -36,6 +38,9 @@ _PROMPT = (
 
 
 async def analyze_food_photo(image_bytes: bytes) -> dict | None:
+    if _model is None:
+        return {"error": "no_key"}
+
     image_part = {
         "inline_data": {
             "mime_type": "image/jpeg",
