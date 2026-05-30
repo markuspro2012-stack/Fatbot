@@ -1,12 +1,18 @@
 from aiogram import Router
 from aiogram.filters import CommandStart, Command
-from aiogram.types import Message
+from aiogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
 from models.user import User
 
 router = Router()
+
+
+def setup_keyboard() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(text="⚙️ Настроить профиль", callback_data="go_setup")
+    ]])
 
 
 @router.message(CommandStart())
@@ -25,14 +31,15 @@ async def cmd_start(message: Message, session: AsyncSession):
     if not user.is_onboarded:
         await message.answer(
             f"Привет, {message.from_user.first_name}! 👋\n\n"
-            "Я CalBot — твой личный нутрициолог в Telegram.\n\n"
+            "Я <b>FatBot</b> — твой личный нутрициолог в Telegram.\n\n"
             "Я помогу тебе:\n"
             "🍽 Считать калории по фото и тексту\n"
             "📊 Отслеживать КБЖУ каждый день\n"
             "🏆 Достигать твоих целей по весу\n"
             "🔔 Напоминать о приёмах пищи\n\n"
-            "Сначала давай настроим твой профиль.\n"
-            "Введи /setup чтобы начать ⚙️"
+            "Сначала настроим твой профиль — займёт 1 минуту:",
+            reply_markup=setup_keyboard(),
+            parse_mode="HTML"
         )
     else:
         await message.answer(
@@ -43,6 +50,13 @@ async def cmd_start(message: Message, session: AsyncSession):
             "/left — остаток калорий\n"
             "/help — все команды"
         )
+
+
+@router.callback_query(lambda c: c.data == "go_setup")
+async def go_setup(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    from handlers.onboarding import cmd_setup
+    await callback.message.delete()
+    await cmd_setup(callback.message, state)
 
 
 @router.message(Command("help"))
