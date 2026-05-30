@@ -4,6 +4,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import asyncio
 import logging
+from aiohttp import web
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -15,6 +16,10 @@ from services.scheduler import setup_scheduler
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
 logger = logging.getLogger(__name__)
+
+
+async def health(request):
+    return web.Response(text="OK")
 
 
 async def db_session_middleware(handler, event, data):
@@ -46,11 +51,22 @@ async def main():
     scheduler.start()
     logger.info("Scheduler started")
 
+    # Health check web server for Render
+    port = int(os.environ.get("PORT", 8080))
+    app = web.Application()
+    app.router.add_get("/", health)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", port)
+    await site.start()
+    logger.info(f"Health server on port {port}")
+
     logger.info("Bot started")
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
         scheduler.shutdown()
+        await runner.cleanup()
 
 
 if __name__ == "__main__":
