@@ -1,16 +1,19 @@
 import base64
 import json
-from openai import AsyncOpenAI
-from config import OPENAI_API_KEY
+import google.generativeai as genai
+from config import GEMINI_API_KEY
 
-client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+genai.configure(api_key=GEMINI_API_KEY)
 
-SYSTEM_PROMPT = (
-    "You are a professional nutritionist and food recognition AI. "
-    "Analyze food photos and return accurate nutritional estimates."
+_model = genai.GenerativeModel(
+    model_name="gemini-1.5-flash",
+    generation_config=genai.GenerationConfig(
+        temperature=0.2,
+        max_output_tokens=400,
+    ),
 )
 
-USER_PROMPT = (
+_PROMPT = (
     "Look at this food photo and identify what you see.\n\n"
     "Respond ONLY with valid JSON, no extra text:\n"
     "{\n"
@@ -22,47 +25,30 @@ USER_PROMPT = (
     '  "carbs": <total carbs grams as number>,\n'
     '  "confidence": "high" or "medium" or "low"\n'
     "}\n\n"
-    "If you cannot identify food in the image, respond with:\n"
+    "If you cannot identify food in the image respond with:\n"
     '{"error": "not_food"}\n\n'
     "Rules:\n"
-    "- food_name in Russian\n"
-    "- amount_g: realistic portion size (e.g. bowl of soup ~350g, sandwich ~200g)\n"
+    "- food_name must be in Russian\n"
+    "- amount_g: realistic portion size (bowl of soup ~350g, sandwich ~200g)\n"
     "- calories/protein/fat/carbs: for the FULL estimated portion, not per 100g\n"
-    "- Be accurate but realistic — do not guess wildly"
+    "- Be accurate and realistic"
 )
 
 
 async def analyze_food_photo(image_bytes: bytes) -> dict | None:
-    b64 = base64.b64encode(image_bytes).decode("utf-8")
+    image_part = {
+        "inline_data": {
+            "mime_type": "image/jpeg",
+            "data": base64.b64encode(image_bytes).decode("utf-8"),
+        }
+    }
 
     try:
-        response = await client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:image/jpeg;base64,{b64}",
-                                "detail": "high",
-                            },
-                        },
-                        {"type": "text", "text": USER_PROMPT},
-                    ],
-                },
-            ],
-            max_tokens=300,
-            temperature=0.2,
-        )
+        response = await _model.generate_content_async([image_part, _PROMPT])
+        raw = response.text.strip()
     except Exception as e:
         return {"error": f"api_error: {e}"}
 
-    raw = response.choices[0].message.content.strip()
-
-    # Strip markdown code blocks if present
     if raw.startswith("```"):
         raw = raw.split("```")[1]
         if raw.startswith("json"):
