@@ -2,9 +2,39 @@ import httpx
 from typing import Optional
 
 OPENFOODFACTS_URL = "https://world.openfoodfacts.org/cgi/search.pl"
+OPENFOODFACTS_V2 = "https://world.openfoodfacts.org/api/v2/search"
+
+HEADERS = {
+    "User-Agent": "FatBot/1.0 (calorie tracker; markuspro2012@gmail.com)",
+    "Accept": "application/json",
+}
 
 
-async def search_food(query: str, page_size: int = 6) -> list[dict]:
+async def search_food(query: str, page_size: int = 8) -> list[dict]:
+    results = await _search_v2(query, page_size)
+    if not results:
+        results = await _search_v1(query, page_size)
+    return results
+
+
+async def _search_v2(query: str, page_size: int) -> list[dict]:
+    params = {
+        "search_terms": query,
+        "fields": "product_name,brands,nutriments,food_groups",
+        "sort_by": "unique_scans_n",
+        "page_size": page_size,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=12.0, headers=HEADERS) as client:
+            response = await client.get(OPENFOODFACTS_V2, params=params)
+            response.raise_for_status()
+            data = response.json()
+        return _parse_products(data.get("products", []), page_size)
+    except Exception:
+        return []
+
+
+async def _search_v1(query: str, page_size: int) -> list[dict]:
     params = {
         "search_terms": query,
         "search_simple": 1,
@@ -14,22 +44,25 @@ async def search_food(query: str, page_size: int = 6) -> list[dict]:
         "fields": "product_name,brands,nutriments",
         "sort_by": "unique_scans_n",
     }
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        try:
+    try:
+        async with httpx.AsyncClient(timeout=12.0, headers=HEADERS) as client:
             response = await client.get(OPENFOODFACTS_URL, params=params)
             response.raise_for_status()
             data = response.json()
-        except Exception:
-            return []
+        return _parse_products(data.get("products", []), page_size)
+    except Exception:
+        return []
 
+
+def _parse_products(products: list, page_size: int) -> list[dict]:
     results = []
-    for product in data.get("products", []):
+    for product in products:
         name = product.get("product_name", "").strip()
         if not name:
             continue
 
         nutriments = product.get("nutriments", {})
-        kcal = _get_float(nutriments, "energy-kcal_100g", "energy_100g")
+        kcal = _get_float(nutriments, "energy-kcal_100g", "energy-kcal", "energy_100g")
         if kcal is None:
             continue
         if kcal > 900 or kcal < 0:
@@ -41,9 +74,9 @@ async def search_food(query: str, page_size: int = 6) -> list[dict]:
         results.append({
             "name": display_name[:100],
             "kcal_100g": round(kcal, 1),
-            "protein_100g": round(_get_float(nutriments, "proteins_100g") or 0, 1),
-            "fat_100g": round(_get_float(nutriments, "fat_100g") or 0, 1),
-            "carbs_100g": round(_get_float(nutriments, "carbohydrates_100g") or 0, 1),
+            "protein_100g": round(_get_float(nutriments, "proteins_100g", "proteins") or 0, 1),
+            "fat_100g": round(_get_float(nutriments, "fat_100g", "fat") or 0, 1),
+            "carbs_100g": round(_get_float(nutriments, "carbohydrates_100g", "carbohydrates") or 0, 1),
         })
 
         if len(results) >= page_size:
