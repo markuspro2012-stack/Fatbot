@@ -4,7 +4,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import asyncio
 import logging
-from aiohttp import web
+
+import uvicorn
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -13,13 +16,27 @@ from config import BOT_TOKEN
 from database import init_db, AsyncSessionLocal
 from handlers import start, onboarding, profile, food_add, food_photo, dashboard, notifications, extras
 from services.scheduler import setup_scheduler
+from api.routes import router as api_router
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s — %(message)s")
 logger = logging.getLogger(__name__)
 
+app = FastAPI(title="FatBot API", docs_url=None, redoc_url=None)
 
-async def health(request):
-    return web.Response(text="OK")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+app.include_router(api_router)
+
+
+@app.get("/")
+async def health():
+    return "OK"
 
 
 async def db_session_middleware(handler, event, data):
@@ -28,22 +45,11 @@ async def db_session_middleware(handler, event, data):
         return await handler(event, data)
 
 
-async def main():
-    # Start health server FIRST so Render detects the port
-    port = int(os.environ.get("PORT", 8080))
-    app = web.Application()
-    app.router.add_get("/", health)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", port)
-    await site.start()
-    logger.info(f"Health server started on port {port}")
-
+async def run_bot():
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher(storage=MemoryStorage())
 
     dp.update.middleware(db_session_middleware)
-
     dp.include_router(start.router)
     dp.include_router(onboarding.router)
     dp.include_router(profile.router)
@@ -53,20 +59,29 @@ async def main():
     dp.include_router(notifications.router)
     dp.include_router(extras.router)
 
-    await init_db()
-    logger.info("Database initialized")
-
     scheduler = AsyncIOScheduler(timezone="Europe/Moscow")
     setup_scheduler(scheduler, bot)
     scheduler.start()
-    logger.info("Scheduler started")
+    logger.info("Bot + scheduler started")
 
-    logger.info("Bot started")
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
         scheduler.shutdown()
-        await runner.cleanup()
+
+
+async def main():
+    await init_db()
+    logger.info("Database initialized")
+
+    port = int(os.environ.get("PORT", 8080))
+    config = uvicorn.Config(app, host="0.0.0.0", port=port, log_level="warning")
+    server = uvicorn.Server(config)
+
+    await asyncio.gather(
+        server.serve(),
+        run_bot(),
+    )
 
 
 if __name__ == "__main__":

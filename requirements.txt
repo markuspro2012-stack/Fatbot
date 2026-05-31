@@ -7,3 +7,6 @@ httpx
 apscheduler
 pytz
 matplotlib
+fastapi
+python-multipart
+uvicorn[standard]
