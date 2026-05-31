@@ -1,103 +1,62 @@
 import httpx
+import os
 from typing import Optional
 
-OPENFOODFACTS_URL = "https://world.openfoodfacts.org/cgi/search.pl"
-OPENFOODFACTS_V2 = "https://world.openfoodfacts.org/api/v2/search"
+USDA_URL = "https://api.nal.usda.gov/fdc/v1/foods/search"
+USDA_KEY = os.environ.get("USDA_API_KEY", "DEMO_KEY")
 
-HEADERS = {
-    "User-Agent": "FatBot/1.0 (calorie tracker; markuspro2012@gmail.com)",
-    "Accept": "application/json",
-}
+# Nutrient IDs / names in USDA database
+_ENERGY_NAMES = {"Energy"}
+_PROTEIN_NAMES = {"Protein"}
+_FAT_NAMES = {"Total lipid (fat)"}
+_CARB_NAMES = {"Carbohydrate, by difference"}
 
 
 async def search_food(query: str, page_size: int = 8) -> list[dict]:
-    results = await _search_v2(query, page_size)
-    if not results:
-        results = await _search_v1(query, page_size)
-    return results
-
-
-async def _search_v2(query: str, page_size: int) -> list[dict]:
     params = {
-        "q": query,
-        "fields": "product_name,brands,nutriments",
-        "sort_by": "unique_scans_n",
-        "page_size": page_size,
+        "query": query,
+        "api_key": USDA_KEY,
+        "pageSize": page_size,
+        "dataType": "Survey (FNDDS),SR Legacy,Foundation",
     }
     try:
-        async with httpx.AsyncClient(timeout=12.0, headers=HEADERS) as client:
-            response = await client.get(OPENFOODFACTS_V2, params=params)
+        async with httpx.AsyncClient(timeout=12.0) as client:
+            response = await client.get(USDA_URL, params=params)
             response.raise_for_status()
             data = response.json()
-        return _parse_products(data.get("products", []), page_size)
     except Exception:
         return []
 
-
-async def _search_v1(query: str, page_size: int) -> list[dict]:
-    params = {
-        "search_terms": query,
-        "search_simple": 1,
-        "action": "process",
-        "json": 1,
-        "page_size": page_size,
-        "fields": "product_name,brands,nutriments",
-        "sort_by": "unique_scans_n",
-    }
-    try:
-        async with httpx.AsyncClient(timeout=12.0, headers=HEADERS) as client:
-            response = await client.get(OPENFOODFACTS_URL, params=params)
-            response.raise_for_status()
-            data = response.json()
-        return _parse_products(data.get("products", []), page_size)
-    except Exception:
-        return []
-
-
-def _parse_products(products: list, page_size: int) -> list[dict]:
     results = []
-    for product in products:
-        name = product.get("product_name", "").strip()
+    for food in data.get("foods", []):
+        name = food.get("description", "").strip()
         if not name:
             continue
 
-        nutriments = product.get("nutriments", {})
+        nutrients = {n.get("nutrientName", ""): n.get("value") for n in food.get("foodNutrients", [])}
 
-        # Try kcal field first; fall back to kJ and convert (÷4.184)
-        kcal = _get_float(nutriments, "energy-kcal_100g", "energy-kcal")
-        if kcal is None:
-            kj = _get_float(nutriments, "energy_100g", "energy")
-            if kj is not None:
-                kcal = kj / 4.184
-
-        if kcal is None or kcal < 0 or kcal > 1200:
+        kcal = _pick(nutrients, _ENERGY_NAMES)
+        if kcal is None or kcal <= 0 or kcal > 1200:
             continue
 
-        brand = product.get("brands", "").split(",")[0].strip()
-        display_name = f"{name} ({brand})" if brand else name
-
         results.append({
-            "name": display_name[:100],
+            "name": name[:100],
             "kcal_100g": round(kcal, 1),
-            "protein_100g": round(_get_float(nutriments, "proteins_100g", "proteins") or 0, 1),
-            "fat_100g": round(_get_float(nutriments, "fat_100g", "fat") or 0, 1),
-            "carbs_100g": round(_get_float(nutriments, "carbohydrates_100g", "carbohydrates") or 0, 1),
+            "protein_100g": round(_pick(nutrients, _PROTEIN_NAMES) or 0, 1),
+            "fat_100g": round(_pick(nutrients, _FAT_NAMES) or 0, 1),
+            "carbs_100g": round(_pick(nutrients, _CARB_NAMES) or 0, 1),
         })
 
-        if len(results) >= page_size:
-            break
-
-    return results
+    return results[:page_size]
 
 
-def _get_float(nutriments: dict, *keys) -> Optional[float]:
-    for key in keys:
-        val = nutriments.get(key)
-        if val is not None:
+def _pick(nutrients: dict, names: set) -> Optional[float]:
+    for k, v in nutrients.items():
+        if k in names and v is not None:
             try:
-                return float(val)
+                return float(v)
             except (TypeError, ValueError):
-                continue
+                pass
     return None
 
 
