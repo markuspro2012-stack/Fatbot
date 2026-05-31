@@ -19,8 +19,8 @@ async def search_food(query: str, page_size: int = 8) -> list[dict]:
 
 async def _search_v2(query: str, page_size: int) -> list[dict]:
     params = {
-        "search_terms": query,
-        "fields": "product_name,brands,nutriments,food_groups",
+        "q": query,
+        "fields": "product_name,brands,nutriments",
         "sort_by": "unique_scans_n",
         "page_size": page_size,
     }
