@@ -62,10 +62,15 @@ def _parse_products(products: list, page_size: int) -> list[dict]:
             continue
 
         nutriments = product.get("nutriments", {})
-        kcal = _get_float(nutriments, "energy-kcal_100g", "energy-kcal", "energy_100g")
+
+        # Try kcal field first; fall back to kJ and convert (÷4.184)
+        kcal = _get_float(nutriments, "energy-kcal_100g", "energy-kcal")
         if kcal is None:
-            continue
-        if kcal > 900 or kcal < 0:
+            kj = _get_float(nutriments, "energy_100g", "energy")
+            if kj is not None:
+                kcal = kj / 4.184
+
+        if kcal is None or kcal < 0 or kcal > 1200:
             continue
 
         brand = product.get("brands", "").split(",")[0].strip()
