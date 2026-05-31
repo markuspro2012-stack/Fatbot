@@ -4,8 +4,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 BOT_TOKEN: str = os.environ["TELEGRAM_BOT_TOKEN"]
-DATABASE_URL: str = os.environ.get("DATABASE_URL", "")
 GEMINI_API_KEY: str = os.environ.get("GEMINI_API_KEY", "")
+GROQ_API_KEY: str = os.environ.get("GROQ_API_KEY", "")
+DATABASE_URL: str = os.environ["DATABASE_URL"]
 
 ACTIVITY_LEVELS = {
     "sedentary": 1.2,

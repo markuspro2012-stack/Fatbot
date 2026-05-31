@@ -1,7 +1,9 @@
 import base64
 import json
 import httpx
-from config import GEMINI_API_KEY
+from config import GROQ_API_KEY
+
+_MODEL = "meta-llama/llama-4-scout-17b-16e-instruct"
 
 _PROMPT = (
     "Look at this food photo and identify what you see.\n\n"
@@ -25,30 +27,40 @@ _PROMPT = (
 
 
 async def analyze_food_photo(image_bytes: bytes) -> dict | None:
-    if not GEMINI_API_KEY:
+    if not GROQ_API_KEY:
         return {"error": "no_key"}
 
     b64 = base64.b64encode(image_bytes).decode("utf-8")
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key={GEMINI_API_KEY}"
 
     payload = {
-        "contents": [{"parts": [
-            {"inline_data": {"mime_type": "image/jpeg", "data": b64}},
-            {"text": _PROMPT}
+        "model": _MODEL,
+        "messages": [{"role": "user", "content": [
+            {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{b64}"}},
+            {"type": "text", "text": _PROMPT},
         ]}],
-        "generationConfig": {"temperature": 0.2, "maxOutputTokens": 400}
+        "max_tokens": 400,
+        "temperature": 0.2,
+    }
+
+    headers = {
+        "Authorization": f"Bearer {GROQ_API_KEY}",
+        "Content-Type": "application/json",
     }
 
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(url, json=payload)
+            response = await client.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                json=payload,
+                headers=headers,
+            )
             response.raise_for_status()
             data = response.json()
     except Exception as e:
         return {"error": f"api_error: {e}"}
 
     try:
-        raw = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+        raw = data["choices"][0]["message"]["content"].strip()
     except (KeyError, IndexError):
         return {"error": "parse_error"}
 
