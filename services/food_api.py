@@ -32,29 +32,64 @@ async def search_food(query: str, page_size: int = 8) -> list[dict]:
         if not name:
             continue
 
-        nutrients = {n.get("nutrientName", ""): n.get("value") for n in food.get("foodNutrients", [])}
+        raw = food.get("foodNutrients", [])
 
-        kcal = _pick(nutrients, _ENERGY_NAMES)
+        kcal = _get_kcal(raw)
         if kcal is None or kcal <= 0 or kcal > 1200:
             continue
 
         results.append({
             "name": name[:100],
             "kcal_100g": round(kcal, 1),
-            "protein_100g": round(_pick(nutrients, _PROTEIN_NAMES) or 0, 1),
-            "fat_100g": round(_pick(nutrients, _FAT_NAMES) or 0, 1),
-            "carbs_100g": round(_pick(nutrients, _CARB_NAMES) or 0, 1),
+            "protein_100g": round(_get_nutrient(raw, _PROTEIN_NAMES) or 0, 1),
+            "fat_100g": round(_get_nutrient(raw, _FAT_NAMES) or 0, 1),
+            "carbs_100g": round(_get_nutrient(raw, _CARB_NAMES) or 0, 1),
         })
 
     return results[:page_size]
 
 
-def _pick(nutrients: dict, names: set) -> Optional[float]:
-    for k, v in nutrients.items():
-        if k in names and v is not None:
+def _get_kcal(nutrients: list) -> Optional[float]:
+    """Get energy in kcal — prefer unitName KCAL, fall back to kJ÷4.184."""
+    kcal_val = None
+    kj_val = None
+    for n in nutrients:
+        name = n.get("nutrientName", "")
+        unit = n.get("unitName", "")
+        val = n.get("value")
+        if val is None:
+            continue
+        if name in _ENERGY_NAMES:
+            if unit in ("KCAL", "kcal"):
+                try:
+                    kcal_val = float(val)
+                except (TypeError, ValueError):
+                    pass
+            elif unit in ("kJ", "KJ"):
+                try:
+                    kj_val = float(val)
+                except (TypeError, ValueError):
+                    pass
+    if kcal_val is not None:
+        return kcal_val
+    if kj_val is not None:
+        return kj_val / 4.184
+    # If no unit info (Survey FNDDS style), pick first Energy value
+    for n in nutrients:
+        if n.get("nutrientName", "") in _ENERGY_NAMES:
             try:
-                return float(v)
-            except (TypeError, ValueError):
+                return float(n["value"])
+            except (TypeError, ValueError, KeyError):
+                pass
+    return None
+
+
+def _get_nutrient(nutrients: list, names: set) -> Optional[float]:
+    for n in nutrients:
+        if n.get("nutrientName", "") in names:
+            try:
+                return float(n["value"])
+            except (TypeError, ValueError, KeyError):
                 pass
     return None
 
