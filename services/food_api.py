@@ -17,7 +17,6 @@ async def search_food(query: str, page_size: int = 8) -> list[dict]:
         "query": query,
         "api_key": USDA_KEY,
         "pageSize": page_size,
-        "dataType": "Survey (FNDDS),SR Legacy,Foundation",
     }
     try:
         async with httpx.AsyncClient(timeout=12.0) as client:
