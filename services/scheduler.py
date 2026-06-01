@@ -3,6 +3,7 @@ from datetime import date
 
 from aiogram import Bot
 from aiogram.exceptions import TelegramForbiddenError, TelegramBadRequest
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from sqlalchemy import select
 
@@ -11,6 +12,17 @@ from models.user import User
 from services.stats import get_daily_totals, progress_bar
 
 logger = logging.getLogger(__name__)
+
+MINIAPP_URL = "https://fatbot-0xxn.onrender.com"
+
+
+def open_btn() -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(inline_keyboard=[[
+        InlineKeyboardButton(
+            text="📱 Открыть FatBot",
+            web_app=WebAppInfo(url=MINIAPP_URL)
+        )
+    ]])
 
 
 async def _get_notifiable_users(field: str) -> list[User]:
@@ -44,9 +56,9 @@ async def morning_briefing(bot: Bot):
             f"🥩 Белки: {user.daily_protein} г  "
             f"🧈 Жиры: {user.daily_fat} г  "
             f"🍞 Углеводы: {user.daily_carbs} г\n\n"
-            f"Начни с хорошего завтрака! 🍳\n"
-            f"Добавь приём пищи: /add",
-            parse_mode="HTML"
+            f"Начни с хорошего завтрака! 🍳",
+            parse_mode="HTML",
+            reply_markup=open_btn()
         )
 
 
@@ -80,7 +92,11 @@ async def evening_summary(bot: Bot):
                     f"⚠️ Превышение на {int(abs(left))} ккал.\n"
                     f"Завтра начнём с чистого листа! 💪"
                 )
-            await _safe_send(bot, user.telegram_id, text, parse_mode="HTML")
+            await _safe_send(
+                bot, user.telegram_id, text,
+                parse_mode="HTML",
+                reply_markup=open_btn()
+            )
 
 
 async def meal_reminder(bot: Bot, meal: str):
@@ -93,7 +109,8 @@ async def meal_reminder(bot: Bot, meal: str):
         await _safe_send(
             bot, user.telegram_id,
             f"{emoji} Время {meal_label.lower()}!\n\n"
-            f"Не забудь записать что съел. Отправь фото или /add",
+            f"Не забудь записать что съел. Отправь фото или добавь через приложение 👇",
+            reply_markup=open_btn()
         )
 
 
@@ -102,7 +119,8 @@ async def water_reminder(bot: Bot):
     for user in users:
         await _safe_send(
             bot, user.telegram_id,
-            "💧 Выпей стакан воды!\n\nОтметить: /water"
+            "💧 Выпей стакан воды!\n\nОтметить можно в приложении 👇",
+            reply_markup=open_btn()
         )
 
 
