@@ -92,6 +92,8 @@ async def get_me(
         "first_name": user.first_name,
         "is_onboarded": user.is_onboarded,
         "goal": user.goal,
+        "gender": user.gender,
+        "activity_level": user.activity_level,
         "daily_calories": user.daily_calories,
         "daily_protein": user.daily_protein,
         "daily_fat": user.daily_fat,
