@@ -16,7 +16,8 @@ from models.weight_log import WeightLog
 from services.food_api import search_food, calculate_portion
 from services.stats import get_today_entries, get_daily_totals, get_week_data
 from services.vision import analyze_food_photo
-from config import MEAL_TYPES
+from services.calculator import calculate_targets
+from config import MEAL_TYPES, ACTIVITY_LEVELS, GOAL_ADJUSTMENTS
 
 router = APIRouter(prefix="/api")
 
@@ -64,6 +65,16 @@ class PhotoConfirmRequest(BaseModel):
     meal_type: str
 
 
+class ProfileUpdateRequest(BaseModel):
+    first_name: Optional[str] = None
+    age: Optional[int] = None
+    height_cm: Optional[int] = None
+    weight_kg: Optional[float] = None
+    gender: Optional[str] = None
+    activity_level: Optional[str] = None
+    goal: Optional[str] = None
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.get("/me")
@@ -84,6 +95,63 @@ async def get_me(
         "weight_kg": user.weight_kg,
         "height_cm": user.height_cm,
         "age": user.age,
+    }
+
+
+@router.put("/profile")
+async def update_profile(
+    body: ProfileUpdateRequest,
+    telegram_id: int = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_session),
+):
+    user = await get_user(telegram_id, session)
+
+    if body.first_name is not None:
+        user.first_name = body.first_name.strip()[:64]
+    if body.age is not None:
+        if not (10 <= body.age <= 120):
+            raise HTTPException(status_code=400, detail="Age must be 10–120")
+        user.age = body.age
+    if body.height_cm is not None:
+        if not (100 <= body.height_cm <= 250):
+            raise HTTPException(status_code=400, detail="Height must be 100–250 cm")
+        user.height_cm = body.height_cm
+    if body.weight_kg is not None:
+        if not (30 <= body.weight_kg <= 300):
+            raise HTTPException(status_code=400, detail="Weight must be 30–300 kg")
+        user.weight_kg = body.weight_kg
+    if body.gender is not None:
+        if body.gender not in ("male", "female"):
+            raise HTTPException(status_code=400, detail="Gender must be male or female")
+        user.gender = body.gender
+    if body.activity_level is not None:
+        if body.activity_level not in ACTIVITY_LEVELS:
+            raise HTTPException(status_code=400, detail="Invalid activity_level")
+        user.activity_level = body.activity_level
+    if body.goal is not None:
+        if body.goal not in GOAL_ADJUSTMENTS:
+            raise HTTPException(status_code=400, detail="Invalid goal")
+        user.goal = body.goal
+
+    # Recalculate targets if we have all required fields
+    if all([user.gender, user.age, user.height_cm, user.weight_kg, user.activity_level, user.goal]):
+        targets = calculate_targets(
+            user.gender, user.weight_kg, user.height_cm,
+            user.age, user.activity_level, user.goal
+        )
+        user.daily_calories = targets["daily_calories"]
+        user.daily_protein  = targets["daily_protein"]
+        user.daily_fat      = targets["daily_fat"]
+        user.daily_carbs    = targets["daily_carbs"]
+
+    await session.commit()
+
+    return {
+        "ok": True,
+        "daily_calories": user.daily_calories,
+        "daily_protein":  user.daily_protein,
+        "daily_fat":      user.daily_fat,
+        "daily_carbs":    user.daily_carbs,
     }
 
 
