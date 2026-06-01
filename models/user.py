@@ -1,4 +1,4 @@
-from sqlalchemy import BigInteger, String, Integer, Float, Boolean, DateTime
+from sqlalchemy import BigInteger, String, Integer, Float, Boolean, DateTime, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from datetime import datetime, timezone
 from database import Base
@@ -30,4 +30,5 @@ class User(Base):
     notify_water: Mapped[bool] = mapped_column(Boolean, default=False)
 
     is_onboarded: Mapped[bool] = mapped_column(Boolean, default=False)
+    profile_photo: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))

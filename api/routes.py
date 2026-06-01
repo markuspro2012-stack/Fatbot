@@ -75,6 +75,10 @@ class ProfileUpdateRequest(BaseModel):
     goal: Optional[str] = None
 
 
+class ProfilePhotoRequest(BaseModel):
+    photo: str  # base64 data URL: "data:image/jpeg;base64,..."
+
+
 # ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.get("/me")
@@ -95,6 +99,7 @@ async def get_me(
         "weight_kg": user.weight_kg,
         "height_cm": user.height_cm,
         "age": user.age,
+        "profile_photo": user.profile_photo,
     }
 
 
@@ -153,6 +158,22 @@ async def update_profile(
         "daily_fat":      user.daily_fat,
         "daily_carbs":    user.daily_carbs,
     }
+
+
+@router.post("/profile/photo")
+async def update_profile_photo(
+    body: ProfilePhotoRequest,
+    telegram_id: int = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_session),
+):
+    if not body.photo.startswith("data:image/"):
+        raise HTTPException(status_code=400, detail="Invalid photo format")
+    if len(body.photo) > 200_000:
+        raise HTTPException(status_code=400, detail="Photo too large (max ~150KB)")
+    user = await get_user(telegram_id, session)
+    user.profile_photo = body.photo
+    await session.commit()
+    return {"ok": True}
 
 
 @router.get("/today")
