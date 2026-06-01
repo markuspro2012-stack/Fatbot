@@ -10,3 +10,4 @@ matplotlib
 fastapi
 python-multipart
 uvicorn[standard]
+aiofiles

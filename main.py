@@ -8,6 +8,7 @@ import logging
 import uvicorn
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -33,10 +34,15 @@ app.add_middleware(
 
 app.include_router(api_router)
 
-
-@app.get("/")
+# Health check (must be before StaticFiles mount)
+@app.get("/health")
 async def health():
     return "OK"
+
+# Serve mini app static files — mount LAST so /api/* routes take priority
+_miniapp_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "miniapp")
+if os.path.exists(_miniapp_dir):
+    app.mount("/", StaticFiles(directory=_miniapp_dir, html=True), name="miniapp")
 
 
 async def db_session_middleware(handler, event, data):
