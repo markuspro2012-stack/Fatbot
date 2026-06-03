@@ -191,11 +191,16 @@ FOODS: list[dict] = [
 
 def _words_match(qw: str, nw: str) -> bool:
     """Check if query word matches a food name word.
-    Handles Russian morphology: курица→куриная, гречка→гречневая, котлет→котлета.
+    Handles Russian morphology: курица→куриная, рыба→рыбные, гречка→гречневая.
     """
     if qw in nw or nw in qw:
         return True
-    # Fuzzy word comparison for close-length words (handles declension/conjugation)
+    # Prefix matching: рыба→рыбные, гречка→гречневый, курица→куриная
+    if len(qw) >= 3:
+        prefix_len = max(3, len(qw) - 2)
+        if nw.startswith(qw[:prefix_len]):
+            return True
+    # Fuzzy for similar-length words (handles declension endings)
     if len(qw) >= 4 and len(nw) >= 4 and abs(len(qw) - len(nw)) <= 2:
         if difflib.SequenceMatcher(None, qw, nw).ratio() >= 0.72:
             return True
