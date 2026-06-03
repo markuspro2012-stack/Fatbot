@@ -1,5 +1,3 @@
-import difflib
-
 # Local food database — 165 items across 10 categories
 # Fields: name, kcal_100g, protein_100g, fat_100g, carbs_100g
 FOODS: list[dict] = [
@@ -285,55 +283,53 @@ SYNONYMS: dict[str, list[str]] = {
     "ягоды":        ["клубника", "черника", "малина", "вишня", "виноград"],
     # Бобовые
     "бобовые":      ["фасоль", "горошек", "нут", "чечевица"],
-    # Курица общее
-    "курятина":     ["куриная грудка", "куриное бедро", "куриная голень", "куриная котлета"],
+    # Курица (общая форма)
+    "курятина":     ["куриная", "куриное", "куриный"],
+    # Морфологические варианты для базы
+    "курица":       ["куриная", "куриное", "куриный"],
+    "гречка":       ["гречневая"],
+    "греча":        ["гречка", "гречневая"],
+    "гречу":        ["гречка", "гречневая"],
+    "картошку":     ["картофель"],
+    "яйца":         ["яйцо"],
+    "яиц":          ["яйцо"],
+    "семга":        ["сёмга"],
+    "семгу":        ["сёмга"],
+    "сёмгу":        ["сёмга"],
+    "молоко":       ["молочный", "молочная"],
+    "сосиска":      ["сосиски"],
 }
 
 
-def _words_match(qw: str, nw: str) -> bool:
-    """Check if query word matches a food name word.
-    Handles Russian morphology: курица→куриная, рыба→рыбные, гречка→гречневая.
-    """
-    if qw in nw or nw in qw:
-        return True
-    # Prefix matching: рыба→рыбные, гречка→гречневый, курица→куриная
-    if len(qw) >= 3:
-        prefix_len = max(3, len(qw) - 2)
-        if nw.startswith(qw[:prefix_len]):
-            return True
-    # Fuzzy for similar-length words (handles declension endings)
-    if len(qw) >= 4 and len(nw) >= 4 and abs(len(qw) - len(nw)) <= 2:
-        if difflib.SequenceMatcher(None, qw, nw).ratio() >= 0.72:
-            return True
-    return False
-
-
 def _score(query: str, name: str) -> int:
+    """Strict scoring — substring only, zero fuzzy. No false positives."""
     q = query.lower().strip()
     n = name.lower()
 
+    # Full exact match
     if n == q:
         return 100
+    # Name starts with query ("банан" → "банан спелый")
     if n.startswith(q):
         return 92
+    # Query is inside name ("суп" → "куриный суп с лапшой")
     if q in n:
         return 85
 
-    # Word-level matching — handles "курица" → "куриная грудка"
+    # Word-by-word: each query word must be substring of some food word (or vice versa)
     q_words = [w for w in q.split() if len(w) >= 2]
-    if q_words:
-        n_words = n.split()
-        hits = sum(1 for qw in q_words if any(_words_match(qw, nw) for nw in n_words))
-        if hits > 0:
-            return min(30 + int(50 * hits / len(q_words)), 80)
+    if not q_words:
+        return 0
 
-    # Fuzzy match on full name only for short queries vs short names
-    if len(q) >= 3 and len(n) <= 20:
-        ratio = difflib.SequenceMatcher(None, q, n).ratio()
-        if ratio >= 0.62:
-            return int(ratio * 45)
+    n_words = n.split()
+    hits = sum(
+        1 for qw in q_words
+        if any(qw in nw or nw in qw for nw in n_words)
+    )
+    if hits > 0:
+        return min(30 + int(50 * hits / len(q_words)), 80)
 
-    return 0
+    return 0  # No fuzzy — prevents банан→рыбные котлеты false positives
 
 
 def search_local_food(query: str, top_k: int = 8) -> list[dict]:
@@ -341,14 +337,14 @@ def search_local_food(query: str, top_k: int = 8) -> list[dict]:
     if not q:
         return []
 
-    # Direct scoring
+    # 1. Direct scoring
     best: dict[str, tuple[int, dict]] = {}
     for food in FOODS:
         s = _score(q, food["name"])
         if s > 0:
             best[food["name"]] = (s, food)
 
-    # Synonym expansion: "рыба" → finds лосось, треска, форель...
+    # 2. Synonym expansion: "рыба"→[лосось,треска,...], "курица"→[куриная,...]
     q_lower = q.lower()
     for term in SYNONYMS.get(q_lower, []):
         for food in FOODS:
