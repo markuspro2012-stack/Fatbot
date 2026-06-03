@@ -2,10 +2,11 @@ import httpx
 import os
 from typing import Optional
 
+from services.local_food_db import search_local_food
+
 USDA_URL = "https://api.nal.usda.gov/fdc/v1/foods/search"
 USDA_KEY = os.environ.get("USDA_API_KEY", "DEMO_KEY")
 
-# Nutrient IDs / names in USDA database
 _ENERGY_NAMES = {"Energy"}
 _PROTEIN_NAMES = {"Protein"}
 _FAT_NAMES = {"Total lipid (fat)"}
@@ -13,6 +14,27 @@ _CARB_NAMES = {"Carbohydrate, by difference"}
 
 
 async def search_food(query: str, page_size: int = 8) -> list[dict]:
+    # 1. Local DB first — instant, no network
+    local = search_local_food(query, top_k=page_size)
+
+    # If we have 4+ local results, return immediately without calling USDA
+    if len(local) >= 4:
+        return local[:page_size]
+
+    # 2. USDA API as fallback / supplement
+    usda = await _search_usda(query, page_size)
+
+    # Merge: local results first, then USDA unique items
+    local_names = {r["name"].lower() for r in local}
+    merged = local[:]
+    for r in usda:
+        if r["name"].lower() not in local_names:
+            merged.append(r)
+
+    return merged[:page_size]
+
+
+async def _search_usda(query: str, page_size: int = 8) -> list[dict]:
     params = {
         "query": query,
         "api_key": USDA_KEY,
@@ -33,7 +55,6 @@ async def search_food(query: str, page_size: int = 8) -> list[dict]:
             continue
 
         raw = food.get("foodNutrients", [])
-
         kcal = _get_kcal(raw)
         if kcal is None or kcal <= 0 or kcal > 1200:
             continue
@@ -50,7 +71,6 @@ async def search_food(query: str, page_size: int = 8) -> list[dict]:
 
 
 def _get_kcal(nutrients: list) -> Optional[float]:
-    """Get energy in kcal — prefer unitName KCAL, fall back to kJ÷4.184."""
     kcal_val = None
     kj_val = None
     for n in nutrients:
@@ -74,7 +94,6 @@ def _get_kcal(nutrients: list) -> Optional[float]:
         return kcal_val
     if kj_val is not None:
         return kj_val / 4.184
-    # If no unit info (Survey FNDDS style), pick first Energy value
     for n in nutrients:
         if n.get("nutrientName", "") in _ENERGY_NAMES:
             try:
