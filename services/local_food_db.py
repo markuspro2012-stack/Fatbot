@@ -189,6 +189,19 @@ FOODS: list[dict] = [
 ]
 
 
+def _words_match(qw: str, nw: str) -> bool:
+    """Check if query word matches a food name word.
+    Handles Russian morphology: курица→куриная, гречка→гречневая, котлет→котлета.
+    """
+    if qw in nw or nw in qw:
+        return True
+    # Fuzzy word comparison for close-length words (handles declension/conjugation)
+    if len(qw) >= 4 and len(nw) >= 4 and abs(len(qw) - len(nw)) <= 2:
+        if difflib.SequenceMatcher(None, qw, nw).ratio() >= 0.72:
+            return True
+    return False
+
+
 def _score(query: str, name: str) -> int:
     q = query.lower().strip()
     n = name.lower()
@@ -200,17 +213,19 @@ def _score(query: str, name: str) -> int:
     if q in n:
         return 85
 
-    # Word-level: every query word that appears in the food name adds score
+    # Word-level matching — handles "курица" → "куриная грудка"
     q_words = [w for w in q.split() if len(w) >= 2]
     if q_words:
-        hits = sum(1 for qw in q_words if any(qw in nw or nw.startswith(qw) for nw in n.split()))
+        n_words = n.split()
+        hits = sum(1 for qw in q_words if any(_words_match(qw, nw) for nw in n_words))
         if hits > 0:
             return min(30 + int(50 * hits / len(q_words)), 80)
 
-    # Fuzzy fallback
-    ratio = difflib.SequenceMatcher(None, q, n).ratio()
-    if ratio >= 0.52:
-        return int(ratio * 48)
+    # Fuzzy match on full name only for short queries vs short names
+    if len(q) >= 3 and len(n) <= 20:
+        ratio = difflib.SequenceMatcher(None, q, n).ratio()
+        if ratio >= 0.62:
+            return int(ratio * 45)
 
     return 0
 
@@ -220,6 +235,10 @@ def search_local_food(query: str, top_k: int = 8) -> list[dict]:
     if not q:
         return []
 
-    scored = [(s, food) for food in FOODS if (s := _score(q, food["name"])) > 0]
+    scored = []
+    for food in FOODS:
+        s = _score(q, food["name"])
+        if s > 0:
+            scored.append((s, food))
     scored.sort(key=lambda x: -x[0])
     return [food for _, food in scored[:top_k]]
