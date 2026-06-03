@@ -316,12 +316,13 @@ def _score(query: str, name: str) -> int:
     if q in n:
         return 85
 
-    # Word-by-word: each query word must be substring of some food word (or vice versa)
-    q_words = [w for w in q.split() if len(w) >= 2]
+    # Word-by-word substring matching — filter words < 3 chars (prepositions "на","в","с")
+    # to avoid "банан" matching "рыба НА пару" via "на" ⊂ "банан"
+    q_words = [w for w in q.split() if len(w) >= 3]
     if not q_words:
         return 0
 
-    n_words = n.split()
+    n_words = [w for w in n.split() if len(w) >= 3]
     hits = sum(
         1 for qw in q_words
         if any(qw in nw or nw in qw for nw in n_words)
