@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>FatBot</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+      html, body { height: 100%; background: #0a0a1a; color: #f0f0ff; }
+      #root { height: 100%; }
+      body { font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif; -webkit-font-smoothing: antialiased; }
+      #splash {
+        position: fixed; inset: 0;
+        display: flex; flex-direction: column;
+        align-items: center; justify-content: center;
+        background: linear-gradient(160deg, #0a0a1a 0%, #0d0d2b 50%, #0a0a1a 100%);
+        color: #f0f0ff; gap: 16px; z-index: 9999;
+      }
+      #splash-icon {
+        font-size: 56px;
+        filter: drop-shadow(0 0 20px rgba(124,92,252,0.7));
+        animation: splashPulse 2s ease infinite;
+      }
+      #splash-title { font-size: 22px; font-weight: 800; letter-spacing: -0.3px; }
+      #splash-sub { font-size: 13px; color: rgba(240,240,255,0.4); }
+      @keyframes splashPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.08)} }
+    </style>
+    <script type="module" crossorigin src="/assets/index-CXOQKz8w.js"></script>
+  </head>
+  <body>
+    <div id="splash">
+      <div id="splash-icon">🥗</div>
+      <div id="splash-title">FatBot</div>
+      <div id="splash-sub">Загружается...</div>
+    </div>
+    <div id="root"></div>
+    <script>
+      window.__hideSplash = function() {
+        var el = document.getElementById('splash');
+        if (el) { el.style.transition = 'opacity 300ms ease'; el.style.opacity = '0'; setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 310); }
+      };
+      window.addEventListener('unhandledrejection', function(e) {
+        var el = document.getElementById('splash');
+        if (el) el.innerHTML = '<div style="padding:32px;color:#f87171;font-size:14px;text-align:center;max-width:300px"><b>Ошибка загрузки</b><br><br>' + (e.reason?.message || e.reason || 'Unknown error') + '</div>';
+      });
+      window.onerror = function(msg) {
+        var el = document.getElementById('splash');
+        if (el) el.innerHTML = '<div style="padding:32px;color:#f87171;font-size:14px;text-align:center;max-width:300px"><b>Ошибка</b><br><br>' + msg + '</div>';
+      };
+    </script>
+  </body>
+</html>
