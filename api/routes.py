@@ -1,18 +1,19 @@
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from sqlalchemy import select, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from api.auth import get_current_user_id
+from api.auth import get_current_user_id, validate_init_data
 from database import AsyncSessionLocal
 from models.user import User
 from models.food_log import FoodLog
 from models.water_log import WaterLog
 from models.weight_log import WeightLog
+from models.user_food import UserFood
 from services.food_api import search_food, calculate_portion
 from services.stats import get_today_entries, get_daily_totals, get_week_data
 from services.vision import analyze_food_photo
@@ -77,6 +78,14 @@ class ProfileUpdateRequest(BaseModel):
 
 class ProfilePhotoRequest(BaseModel):
     photo: str  # base64 data URL: "data:image/jpeg;base64,..."
+
+
+class UserFoodRequest(BaseModel):
+    name: str
+    kcal_100g: float
+    protein_100g: float = 0.0
+    fat_100g: float = 0.0
+    carbs_100g: float = 0.0
 
 
 # ── Endpoints ─────────────────────────────────────────────────────────────────
@@ -224,9 +233,140 @@ async def get_today(
 
 
 @router.get("/food/search")
-async def food_search(q: str = Query(..., min_length=2)):
-    products = await search_food(q)
-    return {"products": products}
+async def food_search(
+    q: str = Query(..., min_length=2),
+    x_init_data: Optional[str] = Header(None, alias="X-Init-Data"),
+    session: AsyncSession = Depends(get_session),
+):
+    user_foods_list = []
+    user_data = validate_init_data(x_init_data) if x_init_data else None
+    if user_data and user_data.get("id"):
+        telegram_id = int(user_data["id"])
+        result = await session.execute(
+            select(UserFood).where(UserFood.telegram_id == telegram_id)
+        )
+        user_foods_list = [
+            {
+                "name": f.name,
+                "kcal_100g": f.kcal_100g,
+                "protein_100g": f.protein_100g,
+                "fat_100g": f.fat_100g,
+                "carbs_100g": f.carbs_100g,
+                "user_food_id": f.id,
+            }
+            for f in result.scalars().all()
+            if q.lower() in f.name.lower()
+        ][:5]
+
+    general = await search_food(q)
+    return {"products": user_foods_list + general}
+
+
+# ── USER FOODS (personal database) ───────────────────────────────────────────
+
+@router.get("/user-foods")
+async def list_user_foods(
+    q: Optional[str] = Query(None),
+    telegram_id: int = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_session),
+):
+    result = await session.execute(
+        select(UserFood).where(UserFood.telegram_id == telegram_id).order_by(UserFood.name)
+    )
+    foods = result.scalars().all()
+    if q:
+        q_lower = q.lower()
+        foods = [f for f in foods if q_lower in f.name.lower()]
+    return {"foods": [_food_dict(f) for f in foods]}
+
+
+@router.post("/user-foods")
+async def create_user_food(
+    body: UserFoodRequest,
+    telegram_id: int = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_session),
+):
+    _validate_food_values(body)
+    name = body.name.strip()[:200]
+    if not name:
+        raise HTTPException(status_code=400, detail="Name is required")
+
+    existing = await session.execute(
+        select(UserFood).where(
+            UserFood.telegram_id == telegram_id,
+            UserFood.name.ilike(name),
+        )
+    )
+    dup = existing.scalar_one_or_none()
+    if dup:
+        return {"ok": False, "duplicate": True, "id": dup.id, "name": dup.name}
+
+    food = UserFood(
+        telegram_id=telegram_id,
+        name=name,
+        kcal_100g=round(body.kcal_100g, 1),
+        protein_100g=round(body.protein_100g, 1),
+        fat_100g=round(body.fat_100g, 1),
+        carbs_100g=round(body.carbs_100g, 1),
+    )
+    session.add(food)
+    await session.commit()
+    await session.refresh(food)
+    return {"ok": True, "id": food.id}
+
+
+@router.put("/user-foods/{food_id}")
+async def update_user_food(
+    food_id: int,
+    body: UserFoodRequest,
+    telegram_id: int = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_session),
+):
+    _validate_food_values(body)
+    food = await session.get(UserFood, food_id)
+    if not food or food.telegram_id != telegram_id:
+        raise HTTPException(status_code=404, detail="Food not found")
+    name = body.name.strip()[:200]
+    if not name:
+        raise HTTPException(status_code=400, detail="Name is required")
+    food.name = name
+    food.kcal_100g = round(body.kcal_100g, 1)
+    food.protein_100g = round(body.protein_100g, 1)
+    food.fat_100g = round(body.fat_100g, 1)
+    food.carbs_100g = round(body.carbs_100g, 1)
+    food.updated_at = datetime.now(timezone.utc)
+    await session.commit()
+    return {"ok": True, "food": _food_dict(food)}
+
+
+@router.delete("/user-foods/{food_id}")
+async def delete_user_food(
+    food_id: int,
+    telegram_id: int = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_session),
+):
+    food = await session.get(UserFood, food_id)
+    if not food or food.telegram_id != telegram_id:
+        raise HTTPException(status_code=404, detail="Food not found")
+    await session.delete(food)
+    await session.commit()
+    return {"ok": True}
+
+
+def _food_dict(f: UserFood) -> dict:
+    return {
+        "id": f.id,
+        "name": f.name,
+        "kcal_100g": f.kcal_100g,
+        "protein_100g": f.protein_100g,
+        "fat_100g": f.fat_100g,
+        "carbs_100g": f.carbs_100g,
+    }
+
+
+def _validate_food_values(body: UserFoodRequest):
+    if body.kcal_100g < 0 or body.protein_100g < 0 or body.fat_100g < 0 or body.carbs_100g < 0:
+        raise HTTPException(status_code=400, detail="Values cannot be negative")
 
 
 @router.post("/food/add")

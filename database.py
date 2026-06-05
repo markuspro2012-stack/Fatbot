@@ -65,3 +65,19 @@ async def init_db():
         await conn.execute(text(
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS profile_photo TEXT"
         ))
+        await conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS user_foods (
+                id SERIAL PRIMARY KEY,
+                telegram_id BIGINT NOT NULL,
+                name VARCHAR(200) NOT NULL,
+                kcal_100g FLOAT NOT NULL,
+                protein_100g FLOAT NOT NULL DEFAULT 0,
+                fat_100g FLOAT NOT NULL DEFAULT 0,
+                carbs_100g FLOAT NOT NULL DEFAULT 0,
+                created_at TIMESTAMPTZ DEFAULT NOW(),
+                updated_at TIMESTAMPTZ DEFAULT NOW()
+            )
+        """))
+        await conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_user_foods_tg ON user_foods(telegram_id)"
+        ))
