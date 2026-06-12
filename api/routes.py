@@ -16,7 +16,7 @@ from models.weight_log import WeightLog
 from models.user_food import UserFood
 from services.food_api import search_food, calculate_portion
 from services.stats import get_today_entries, get_daily_totals, get_week_data
-from services.vision import analyze_food_photo
+from services.vision import analyze_food_photo, analyze_nutrition_label
 from services.calculator import calculate_targets
 from config import MEAL_TYPES, ACTIVITY_LEVELS, GOAL_ADJUSTMENTS
 
@@ -46,6 +46,10 @@ class FoodAddRequest(BaseModel):
     carbs: float
     meal_type: str
     log_date: Optional[str] = None
+
+
+class FoodUpdateRequest(BaseModel):
+    amount_g: float
 
 
 class WaterRequest(BaseModel):
@@ -418,6 +422,49 @@ async def food_photo(
         raise HTTPException(status_code=500, detail=f"AI error: {error}")
 
     return result
+
+
+@router.post("/food/label-scan")
+async def food_label_scan(
+    photo: UploadFile = File(...),
+    telegram_id: int = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_session),
+):
+    await get_user(telegram_id, session)
+    image_bytes = await photo.read()
+    result = await analyze_nutrition_label(image_bytes)
+
+    if result is None or "error" in result:
+        error = result.get("error", "unknown") if result else "unknown"
+        if error == "not_label":
+            raise HTTPException(status_code=422, detail="not_label")
+        if error == "no_key":
+            raise HTTPException(status_code=503, detail="AI not configured")
+        raise HTTPException(status_code=500, detail=f"AI error: {error}")
+
+    return result
+
+
+@router.put("/food/{entry_id}")
+async def food_update(
+    entry_id: int,
+    body: FoodUpdateRequest,
+    telegram_id: int = Depends(get_current_user_id),
+    session: AsyncSession = Depends(get_session),
+):
+    if body.amount_g <= 0 or body.amount_g > 5000:
+        raise HTTPException(status_code=400, detail="Amount must be 1–5000g")
+    entry = await session.get(FoodLog, entry_id)
+    if not entry or entry.telegram_id != telegram_id:
+        raise HTTPException(status_code=404, detail="Entry not found")
+    factor = body.amount_g / entry.amount_g
+    entry.amount_g = body.amount_g
+    entry.calories = round(entry.calories * factor, 1)
+    entry.protein = round(entry.protein * factor, 1)
+    entry.fat = round(entry.fat * factor, 1)
+    entry.carbs = round(entry.carbs * factor, 1)
+    await session.commit()
+    return {"ok": True}
 
 
 @router.delete("/food/{entry_id}")
